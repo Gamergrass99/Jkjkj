@@ -1,81 +1,50 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Parabolic Trajectory Calculator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Calculator</title>
 
 <style>
 body{
 font-family:Arial,sans-serif;
-background:#f2f5f9;
+background:#f2f2f2;
 margin:0;
-padding:15px;
+padding:20px;
 }
-
 .container{
-max-width:900px;
+max-width:500px;
 margin:auto;
-background:white;
-padding:15px;
+background:#fff;
+padding:20px;
 border-radius:15px;
-box-shadow:0 5px 15px rgba(0,0,0,.15);
+box-shadow:0 5px 15px rgba(0,0,0,.2);
 }
-
 h2{
 text-align:center;
-margin-bottom:15px;
 }
-
-label{
-display:block;
-margin-top:10px;
-font-weight:bold;
-}
-
 input{
 width:100%;
-padding:10px;
-margin-top:5px;
+padding:12px;
+margin:8px 0;
+font-size:16px;
+border:1px solid #ccc;
 border-radius:8px;
-border:1px solid #bbb;
 box-sizing:border-box;
 }
-
-button{
-width:100%;
-padding:12px;
-margin-top:15px;
-border:none;
-background:#1976d2;
-color:white;
-font-size:18px;
-border-radius:10px;
-cursor:pointer;
-}
-
 table{
 width:100%;
 margin-top:20px;
 border-collapse:collapse;
-font-size:13px;
 }
-
 th,td{
 border:1px solid #ddd;
-padding:6px;
+padding:8px;
 text-align:center;
 }
-
 th{
-background:#1976d2;
+background:#1976D2;
 color:white;
-}
-
-@media(max-width:700px){
-table{
-font-size:11px;
-}
 }
 </style>
 </head>
@@ -84,112 +53,77 @@ font-size:11px;
 
 <div class="container">
 
-<h2>Parabolic Trajectory Calculator</h2>
+<h2>Gravity Experiment Calculator</h2>
 
-<label>Maximum Height H (m)</label>
-<input id="height" type="number" step="any">
+<input id="h" type="number" step="any" placeholder="Height H (m)" oninput="calc()">
 
-<label>Launch Angle (degrees)</label>
-<input id="angle" type="number" value="45">
+<input id="t1" type="number" step="any" placeholder="Time T1 (s)" oninput="calc()">
+<input id="t2" type="number" step="any" placeholder="Time T2 (s)" oninput="calc()">
+<input id="t3" type="number" step="any" placeholder="Time T3 (s)" oninput="calc()">
+<input id="t4" type="number" step="any" placeholder="Time T4 (s)" oninput="calc()">
+<input id="t5" type="number" step="any" placeholder="Time T5 (s)" oninput="calc()">
 
-<table id="table">
+<table>
 <tr>
 <th>Trial</th>
-<th>Range x (m)</th>
-<th>Time T (s)</th>
-<th>T²</th>
-<th>Velocity uₓ</th>
-<th>g</th>
-<th>Calc Range</th>
+<th>Time (s)</th>
+<th>T² (s²)</th>
+<th>g (m/s²)</th>
 </tr>
+<tbody id="result"></tbody>
+<tfoot id="avg"></tfoot>
 </table>
-
-<button onclick="calculate()">Calculate</button>
-
-<div id="avg"></div>
 
 </div>
 
 <script>
+function calc(){
 
-const table=document.getElementById("table");
+let h=parseFloat(document.getElementById("h").value);
+
+let html="";
+let sumT=0,sumT2=0,sumG=0,count=0;
 
 for(let i=1;i<=5;i++){
-let row=table.insertRow();
 
-row.innerHTML=`
+let t=parseFloat(document.getElementById("t"+i).value);
+
+if(!isNaN(t)&&!isNaN(h)){
+
+let t2=t*t;
+let g=(8*h)/t2;
+
+html+=`
+<tr>
 <td>${i}</td>
-<td><input id="x${i}" type="number" step="any"></td>
-<td><input id="t${i}" type="number" step="any"></td>
-<td id="tsq${i}"></td>
-<td id="vel${i}"></td>
-<td id="g${i}"></td>
-<td id="range${i}"></td>
+<td>${t.toFixed(3)}</td>
+<td>${t2.toFixed(3)}</td>
+<td>${g.toFixed(3)}</td>
+</tr>
 `;
-}
 
-function calculate(){
-
-let H=parseFloat(document.getElementById("height").value);
-let angle=parseFloat(document.getElementById("angle").value);
-
-let sin2=Math.sin(2*angle*Math.PI/180);
-
-let sumT=0,sumT2=0,sumV=0,sumG=0,sumR=0,count=0;
-
-for(let i=1;i<=5;i++){
-
-let x=parseFloat(document.getElementById("x"+i).value);
-let T=parseFloat(document.getElementById("t"+i).value);
-
-if(isNaN(x)||isNaN(T)) continue;
-
-let T2=T*T;
-let v=x/T;
-let g=8*H/T2;
-let R=(v*v/g)*sin2;
-
-document.getElementById("tsq"+i).innerHTML=T2.toFixed(3);
-document.getElementById("vel"+i).innerHTML=v.toFixed(3);
-document.getElementById("g"+i).innerHTML=g.toFixed(3);
-document.getElementById("range"+i).innerHTML=R.toFixed(3);
-
-sumT+=T;
-sumT2+=T2;
-sumV+=v;
+sumT+=t;
+sumT2+=t2;
 sumG+=g;
-sumR+=R;
 count++;
 }
+}
+
+document.getElementById("result").innerHTML=html;
 
 if(count>0){
-
 document.getElementById("avg").innerHTML=`
-<h3>Averages</h3>
-
-<table>
-<tr>
-<th>Mean T</th>
-<th>Mean T²</th>
-<th>Mean Velocity</th>
-<th>Mean g</th>
-<th>Mean Range</th>
-</tr>
-
-<tr>
+<tr style="font-weight:bold;background:#e8f5e9;">
+<td>Average</td>
 <td>${(sumT/count).toFixed(3)}</td>
 <td>${(sumT2/count).toFixed(3)}</td>
-<td>${(sumV/count).toFixed(3)}</td>
 <td>${(sumG/count).toFixed(3)}</td>
-<td>${(sumR/count).toFixed(3)}</td>
-</tr>
-
-</table>
-`;
+</tr>`;
+}else{
+document.getElementById("avg").innerHTML="";
 }
 
 }
-
 </script>
 
 </body>
