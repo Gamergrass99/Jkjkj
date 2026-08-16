@@ -10,39 +10,19 @@
 
 <h1>Audio Binary Modem</h1>
 
-<h2>Settings</h2>
+<h2>Send</h2>
 
-<label>Frequency A (Hz):</label>
-<input id="freqA" type="number" value="8000">
+<label>Frequency for 0 (Hz):</label>
+<input id="sendFreq0" type="number" value="8000">
 <br><br>
 
-<label>Frequency B (Hz):</label>
-<input id="freqB" type="number" value="9000">
-<br><br>
-
-<label>Frequency used for binary 0:</label>
-<select id="zeroFrequency">
-    <option value="A">Frequency A</option>
-    <option value="B">Frequency B</option>
-</select>
+<label>Frequency for 1 (Hz):</label>
+<input id="sendFreq1" type="number" value="9000">
 <br><br>
 
 <label>Bit duration (ms):</label>
-<input id="bitDuration" type="number" value="150">
+<input id="sendBitDuration" type="number" value="150">
 <br><br>
-
-<label>Detection tolerance (Hz):</label>
-<input id="tolerance" type="number" value="100">
-<br><br>
-
-<p>
-    Binary 0: <span id="zeroDisplay">8000 Hz</span><br>
-    Binary 1: <span id="oneDisplay">9000 Hz</span>
-</p>
-
-<hr>
-
-<h2>Send</h2>
 
 <label>Text:</label><br>
 <textarea id="textToSend" rows="5" cols="50"></textarea>
@@ -59,6 +39,22 @@
 <hr>
 
 <h2>Receive</h2>
+
+<label>Listen for binary 0 frequency (Hz):</label>
+<input id="receiveFreq0" type="number" value="8000">
+<br><br>
+
+<label>Listen for binary 1 frequency (Hz):</label>
+<input id="receiveFreq1" type="number" value="9000">
+<br><br>
+
+<label>Bit duration (ms):</label>
+<input id="receiveBitDuration" type="number" value="150">
+<br><br>
+
+<label>Frequency tolerance (Hz):</label>
+<input id="receiveTolerance" type="number" value="100">
+<br><br>
 
 <button onclick="startReceiving()">
     Start Listening
@@ -101,79 +97,6 @@ let receiveAnimation = null;
 
 let receivedBits = "";
 let lastBitTime = 0;
-
-const freqAInput =
-    document.getElementById("freqA");
-
-const freqBInput =
-    document.getElementById("freqB");
-
-const zeroFrequencyInput =
-    document.getElementById("zeroFrequency");
-
-const bitDurationInput =
-    document.getElementById("bitDuration");
-
-const toleranceInput =
-    document.getElementById("tolerance");
-
-
-freqAInput.addEventListener(
-    "input",
-    updateDisplay
-);
-
-freqBInput.addEventListener(
-    "input",
-    updateDisplay
-);
-
-zeroFrequencyInput.addEventListener(
-    "change",
-    updateDisplay
-);
-
-
-function getFrequencies() {
-
-    const freqA =
-        Number(freqAInput.value);
-
-    const freqB =
-        Number(freqBInput.value);
-
-    if (zeroFrequencyInput.value === "A") {
-
-        return {
-            freq0: freqA,
-            freq1: freqB
-        };
-
-    } else {
-
-        return {
-            freq0: freqB,
-            freq1: freqA
-        };
-    }
-}
-
-
-function updateDisplay() {
-
-    const frequencies =
-        getFrequencies();
-
-    document.getElementById(
-        "zeroDisplay"
-    ).textContent =
-        frequencies.freq0 + " Hz";
-
-    document.getElementById(
-        "oneDisplay"
-    ).textContent =
-        frequencies.freq1 + " Hz";
-}
 
 
 function textToBinary(text) {
@@ -301,14 +224,25 @@ async function sendText() {
         return;
     }
 
-    const {
-        freq0,
-        freq1
-    } = getFrequencies();
+    const freq0 =
+        Number(
+            document.getElementById(
+                "sendFreq0"
+            ).value
+        );
+
+    const freq1 =
+        Number(
+            document.getElementById(
+                "sendFreq1"
+            ).value
+        );
 
     const duration =
         Number(
-            bitDurationInput.value
+            document.getElementById(
+                "sendBitDuration"
+            ).value
         );
 
     const binary =
@@ -390,13 +324,7 @@ async function startReceiving() {
                 window.webkitAudioContext
             )();
 
-        if (
-            receiveContext.state ===
-            "suspended"
-        ) {
-
-            await receiveContext.resume();
-        }
+        await receiveContext.resume();
 
         receiveStream =
             await navigator.mediaDevices
@@ -474,7 +402,9 @@ function getFrequencyStrength(
 
     const tolerance =
         Number(
-            toleranceInput.value
+            document.getElementById(
+                "receiveTolerance"
+            ).value
         );
 
     const binWidth =
@@ -489,7 +419,8 @@ function getFrequencyStrength(
             )
         );
 
-    let strongest = -Infinity;
+    let strongest =
+        -Infinity;
 
     for (
         let i = center - range;
@@ -499,16 +430,11 @@ function getFrequencyStrength(
 
         if (
             i >= 0 &&
-            i < data.length
+            i < data.length &&
+            data[i] > strongest
         ) {
 
-            if (
-                data[i] > strongest
-            ) {
-
-                strongest =
-                    data[i];
-            }
+            strongest = data[i];
         }
     }
 
@@ -521,10 +447,19 @@ function detectFrequency() {
     if (!analyser)
         return;
 
-    const {
-        freq0,
-        freq1
-    } = getFrequencies();
+    const freq0 =
+        Number(
+            document.getElementById(
+                "receiveFreq0"
+            ).value
+        );
+
+    const freq1 =
+        Number(
+            document.getElementById(
+                "receiveFreq1"
+            ).value
+        );
 
     const data =
         new Float32Array(
@@ -591,7 +526,9 @@ function detectedBit(bit) {
 
     const duration =
         Number(
-            bitDurationInput.value
+            document.getElementById(
+                "receiveBitDuration"
+            ).value
         );
 
     if (
@@ -693,9 +630,6 @@ function stopReceiving() {
     ).textContent =
         "---";
 }
-
-
-updateDisplay();
 
 </script>
 
