@@ -3,127 +3,525 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gravity Calculator</title>
+<title>Audio Binary Modem</title>
 
 <style>
-body{
-font-family:Arial,sans-serif;
-background:#f2f2f2;
-margin:0;
-padding:20px;
-}
-.container{
-max-width:500px;
-margin:auto;
-background:#fff;
-padding:20px;
-border-radius:15px;
-box-shadow:0 5px 15px rgba(0,0,0,.2);
-}
-h2{
-text-align:center;
-}
-input{
-width:100%;
-padding:12px;
-margin:8px 0;
-font-size:16px;
-border:1px solid #ccc;
-border-radius:8px;
-box-sizing:border-box;
-}
-table{
-width:100%;
-margin-top:20px;
-border-collapse:collapse;
-}
-th,td{
-border:1px solid #ddd;
-padding:8px;
-text-align:center;
-}
-th{
-background:#1976D2;
-color:white;
-}
+    body {
+        font-family: Arial, sans-serif;
+        background: #111;
+        color: white;
+        max-width: 900px;
+        margin: auto;
+        padding: 25px;
+    }
+
+    h1 {
+        text-align: center;
+    }
+
+    .box {
+        background: #1d1d1d;
+        padding: 20px;
+        margin: 15px 0;
+        border-radius: 12px;
+    }
+
+    textarea, input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 12px;
+        margin: 8px 0;
+        background: #292929;
+        color: white;
+        border: 1px solid #555;
+        border-radius: 7px;
+    }
+
+    button {
+        padding: 12px 18px;
+        margin: 5px;
+        border: none;
+        border-radius: 7px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .send {
+        background: #35c759;
+    }
+
+    .receive {
+        background: #0a84ff;
+        color: white;
+    }
+
+    .stop {
+        background: #ff453a;
+        color: white;
+    }
+
+    .status {
+        margin-top: 10px;
+        padding: 10px;
+        background: #080808;
+        border-radius: 7px;
+        font-family: monospace;
+    }
+
+    .freq {
+        font-size: 28px;
+        text-align: center;
+        margin: 15px;
+    }
 </style>
 </head>
 
 <body>
 
-<div class="container">
+<h1>🔊 Audio Binary Modem</h1>
 
-<h2>Gravity Experiment Calculator</h2>
+<div class="box">
+    <h2>⚙️ Frequencies</h2>
 
-<input id="h" type="number" step="any" placeholder="Height H (m)" oninput="calc()">
+    <label>Frequency for binary 0 (Hz)</label>
+    <input id="freq0" type="number" value="8000">
 
-<input id="t1" type="number" step="any" placeholder="Time T1 (s)" oninput="calc()">
-<input id="t2" type="number" step="any" placeholder="Time T2 (s)" oninput="calc()">
-<input id="t3" type="number" step="any" placeholder="Time T3 (s)" oninput="calc()">
-<input id="t4" type="number" step="any" placeholder="Time T4 (s)" oninput="calc()">
-<input id="t5" type="number" step="any" placeholder="Time T5 (s)" oninput="calc()">
+    <label>Frequency for binary 1 (Hz)</label>
+    <input id="freq1" type="number" value="9000">
 
-<table>
-<tr>
-<th>Trial</th>
-<th>Time (s)</th>
-<th>T² (s²)</th>
-<th>g (m/s²)</th>
-</tr>
-<tbody id="result"></tbody>
-<tfoot id="avg"></tfoot>
-</table>
+    <label>Bit duration (milliseconds)</label>
+    <input id="bitDuration" type="number" value="150">
 
+    <p>
+        <b>0</b> → <span id="show0">8000</span> Hz<br>
+        <b>1</b> → <span id="show1">9000</span> Hz
+    </p>
+</div>
+
+<div class="box">
+    <h2>📤 Send Mode</h2>
+
+    <textarea id="textToSend"
+        placeholder="Enter text to transmit..."></textarea>
+
+    <button class="send" onclick="sendText()">▶ Send</button>
+    <button class="stop" onclick="stopSending()">■ Stop</button>
+
+    <h3>Binary:</h3>
+
+    <textarea id="binaryOutput" readonly></textarea>
+
+    <div class="status" id="sendStatus">
+        Ready
+    </div>
+</div>
+
+<div class="box">
+    <h2>📥 Receive Mode</h2>
+
+    <button class="receive" onclick="startReceiving()">
+        🎤 Start Listening
+    </button>
+
+    <button class="stop" onclick="stopReceiving()">
+        ■ Stop Listening
+    </button>
+
+    <div class="freq">
+        Detected: <span id="detectedFreq">---</span> Hz
+    </div>
+
+    <h3>Received Binary:</h3>
+
+    <textarea id="receivedBinary" readonly></textarea>
+
+    <h3>Decoded Text:</h3>
+
+    <textarea id="receivedText" readonly></textarea>
+
+    <div class="status" id="receiveStatus">
+        Microphone not running
+    </div>
 </div>
 
 <script>
-function calc(){
 
-let h=parseFloat(document.getElementById("h").value);
+let audioContext;
+let oscillator;
+let gainNode;
+let sending = false;
 
-let html="";
-let sumT=0,sumT2=0,sumG=0,count=0;
+let receiveContext;
+let analyser;
+let microphone;
+let receiveAnimation;
 
-for(let i=1;i<=5;i++){
+let receivedBits = "";
 
-let t=parseFloat(document.getElementById("t"+i).value);
+const freq0Input = document.getElementById("freq0");
+const freq1Input = document.getElementById("freq1");
 
-if(!isNaN(t)&&!isNaN(h)){
+const bitDurationInput =
+    document.getElementById("bitDuration");
 
-let t2=t*t;
-let g=(8*h)/t2;
+freq0Input.addEventListener("input", updateDisplay);
+freq1Input.addEventListener("input", updateDisplay);
 
-html+=`
-<tr>
-<td>${i}</td>
-<td>${t.toFixed(3)}</td>
-<td>${t2.toFixed(3)}</td>
-<td>${g.toFixed(3)}</td>
-</tr>
-`;
+function updateDisplay() {
+    document.getElementById("show0").textContent =
+        freq0Input.value;
 
-sumT+=t;
-sumT2+=t2;
-sumG+=g;
-count++;
-}
+    document.getElementById("show1").textContent =
+        freq1Input.value;
 }
 
-document.getElementById("result").innerHTML=html;
+function textToBinary(text) {
 
-if(count>0){
-document.getElementById("avg").innerHTML=`
-<tr style="font-weight:bold;background:#e8f5e9;">
-<td>Average</td>
-<td>${(sumT/count).toFixed(3)}</td>
-<td>${(sumT2/count).toFixed(3)}</td>
-<td>${(sumG/count).toFixed(3)}</td>
-</tr>`;
-}else{
-document.getElementById("avg").innerHTML="";
+    const bytes =
+        new TextEncoder().encode(text);
+
+    let binary = "";
+
+    for (const byte of bytes) {
+        binary +=
+            byte.toString(2).padStart(8, "0");
+    }
+
+    return binary;
 }
 
+function binaryToText(binary) {
+
+    let bytes = [];
+
+    for (
+        let i = 0;
+        i + 8 <= binary.length;
+        i += 8
+    ) {
+        const byte =
+            parseInt(binary.substring(i, i + 8), 2);
+
+        bytes.push(byte);
+    }
+
+    try {
+        return new TextDecoder().decode(
+            new Uint8Array(bytes)
+        );
+    } catch {
+        return "";
+    }
 }
+
+async function playFrequency(frequency, duration) {
+
+    if (!audioContext) {
+        audioContext =
+            new (window.AudioContext ||
+                 window.webkitAudioContext)();
+    }
+
+    if (audioContext.state === "suspended") {
+        await audioContext.resume();
+    }
+
+    oscillator =
+        audioContext.createOscillator();
+
+    gainNode =
+        audioContext.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.value = frequency;
+    gainNode.gain.value = 0.15;
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.start();
+
+    await new Promise(resolve =>
+        setTimeout(resolve, duration)
+    );
+
+    try {
+        oscillator.stop();
+    } catch {}
+
+    oscillator.disconnect();
+    gainNode.disconnect();
+}
+
+async function sendText() {
+
+    if (sending)
+        return;
+
+    const text =
+        document.getElementById("textToSend").value;
+
+    if (!text) {
+        alert("Enter some text first.");
+        return;
+    }
+
+    const freq0 =
+        Number(freq0Input.value);
+
+    const freq1 =
+        Number(freq1Input.value);
+
+    const duration =
+        Number(bitDurationInput.value);
+
+    const binary =
+        textToBinary(text);
+
+    document.getElementById("binaryOutput")
+        .value = binary;
+
+    sending = true;
+
+    document.getElementById("sendStatus")
+        .textContent =
+        "Sending " + binary.length + " bits...";
+
+    const transmission =
+        "10101010" + binary;
+
+    for (const bit of transmission) {
+
+        if (!sending)
+            break;
+
+        if (bit === "0") {
+
+            await playFrequency(
+                freq0,
+                duration
+            );
+
+        } else {
+
+            await playFrequency(
+                freq1,
+                duration
+            );
+        }
+    }
+
+    sending = false;
+
+    document.getElementById("sendStatus")
+        .textContent =
+        "Transmission finished.";
+}
+
+function stopSending() {
+
+    sending = false;
+
+    if (oscillator) {
+
+        try {
+            oscillator.stop();
+        } catch {}
+
+        oscillator = null;
+    }
+
+    document.getElementById("sendStatus")
+        .textContent =
+        "Transmission stopped.";
+}
+
+async function startReceiving() {
+
+    try {
+
+        receiveContext =
+            new (window.AudioContext ||
+                 window.webkitAudioContext)();
+
+        const stream =
+            await navigator.mediaDevices
+                .getUserMedia({
+                    audio: true
+                });
+
+        microphone =
+            receiveContext.createMediaStreamSource(
+                stream
+            );
+
+        analyser =
+            receiveContext.createAnalyser();
+
+        analyser.fftSize = 4096;
+
+        microphone.connect(analyser);
+
+        receivedBits = "";
+
+        document.getElementById("receivedBinary")
+            .value = "";
+
+        document.getElementById("receivedText")
+            .value = "";
+
+        document.getElementById("receiveStatus")
+            .textContent =
+            "Listening...";
+
+        detectFrequency();
+
+    } catch (error) {
+
+        document.getElementById("receiveStatus")
+            .textContent =
+            "Microphone error: " + error.message;
+    }
+}
+
+function detectFrequency() {
+
+    if (!analyser)
+        return;
+
+    const bufferLength =
+        analyser.frequencyBinCount;
+
+    const data =
+        new Float32Array(bufferLength);
+
+    analyser.getFloatFrequencyData(data);
+
+    let strongestIndex = 0;
+    let strongestValue = -Infinity;
+
+    for (
+        let i = 1;
+        i < bufferLength;
+        i++
+    ) {
+
+        if (data[i] > strongestValue) {
+
+            strongestValue =
+                data[i];
+
+            strongestIndex = i;
+        }
+    }
+
+    const frequency =
+        strongestIndex *
+        receiveContext.sampleRate /
+        analyser.fftSize;
+
+    document.getElementById("detectedFreq")
+        .textContent =
+        Math.round(frequency);
+
+    const f0 =
+        Number(freq0Input.value);
+
+    const f1 =
+        Number(freq1Input.value);
+
+    const distance0 =
+        Math.abs(frequency - f0);
+
+    const distance1 =
+        Math.abs(frequency - f1);
+
+    const tolerance = 300;
+
+    if (
+        distance0 < tolerance &&
+        distance0 < distance1
+    ) {
+        detectedBit("0");
+
+    } else if (
+        distance1 < tolerance &&
+        distance1 < distance0
+    ) {
+        detectedBit("1");
+    }
+
+    receiveAnimation =
+        requestAnimationFrame(
+            detectFrequency
+        );
+}
+
+let lastBitTime = 0;
+
+function detectedBit(bit) {
+
+    const now = performance.now();
+
+    const duration =
+        Number(bitDurationInput.value);
+
+    if (
+        now - lastBitTime <
+        duration * 0.75
+    ) {
+        return;
+    }
+
+    lastBitTime = now;
+
+    receivedBits += bit;
+
+    document.getElementById("receivedBinary")
+        .value = receivedBits;
+
+    if (receivedBits.length >= 8) {
+
+        const data =
+            receivedBits.substring(8);
+
+        document.getElementById("receivedText")
+            .value =
+            binaryToText(data);
+    }
+}
+
+function stopReceiving() {
+
+    if (receiveAnimation) {
+
+        cancelAnimationFrame(
+            receiveAnimation
+        );
+
+        receiveAnimation = null;
+    }
+
+    if (microphone) {
+
+        microphone.disconnect();
+        microphone = null;
+    }
+
+    if (receiveContext) {
+
+        receiveContext.close();
+        receiveContext = null;
+    }
+
+    document.getElementById("receiveStatus")
+        .textContent =
+        "Listening stopped.";
+
+    document.getElementById("detectedFreq")
+        .textContent = "---";
+}
+
 </script>
 
 </body>
