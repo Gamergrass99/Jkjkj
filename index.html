@@ -21,35 +21,37 @@
 <br><br>
 
 <label>Bit duration (ms):</label>
-<input id="sendBitDuration" type="number" value="150">
+<input id="sendBitDuration" type="number" value="200">
 <br><br>
 
-<label>Text:</label><br>
+<label>Text to send:</label><br>
 <textarea id="textToSend" rows="5" cols="50"></textarea>
 <br><br>
 
 <button onclick="sendText()">Send</button>
-<button onclick="stopSending()">Stop</button>
+<button onclick="stopSending()">Stop Sending</button>
 
 <p>Status: <span id="sendStatus">Ready</span></p>
 
 <label>Binary:</label><br>
 <textarea id="binaryOutput" rows="5" cols="50" readonly></textarea>
 
+
 <hr>
+
 
 <h2>Receive</h2>
 
-<label>Listen for binary 0 frequency (Hz):</label>
+<label>Listen for 0 (Hz):</label>
 <input id="receiveFreq0" type="number" value="8000">
 <br><br>
 
-<label>Listen for binary 1 frequency (Hz):</label>
+<label>Listen for 1 (Hz):</label>
 <input id="receiveFreq1" type="number" value="9000">
 <br><br>
 
 <label>Bit duration (ms):</label>
-<input id="receiveBitDuration" type="number" value="150">
+<input id="receiveBitDuration" type="number" value="200">
 <br><br>
 
 <label>Frequency tolerance (Hz):</label>
@@ -65,8 +67,13 @@
 </button>
 
 <p>
-    Detected frequency:
+    Detected:
     <span id="detectedFreq">---</span> Hz
+</p>
+
+<p>
+    Receiver status:
+    <span id="receiveStatus">Stopped</span>
 </p>
 
 <label>Received Binary:</label><br>
@@ -77,9 +84,23 @@
 <label>Decoded Text:</label><br>
 <textarea id="receivedText" rows="5" cols="50" readonly></textarea>
 
-<p>Status: <span id="receiveStatus">
-    Microphone not running
-</span></p>
+
+<hr>
+
+
+<h2>Send + Listen</h2>
+
+<p>
+This mode starts the microphone first and then sends the text.
+</p>
+
+<button onclick="sendAndListen()">
+    Send + Listen
+</button>
+
+<button onclick="stopEverything()">
+    Stop Everything
+</button>
 
 
 <script>
@@ -87,16 +108,19 @@
 let audioContext = null;
 let oscillator = null;
 let gainNode = null;
+
 let sending = false;
 
 let receiveContext = null;
 let analyser = null;
 let microphone = null;
 let receiveStream = null;
-let receiveAnimation = null;
+
+let receiving = false;
+let receiveTimer = null;
 
 let receivedBits = "";
-let lastBitTime = 0;
+let receiveStartTime = 0;
 
 
 function textToBinary(text) {
@@ -147,10 +171,7 @@ function binaryToText(binary) {
 }
 
 
-async function playFrequency(
-    frequency,
-    duration
-) {
+async function createAudioContext() {
 
     if (!audioContext) {
 
@@ -162,12 +183,20 @@ async function playFrequency(
     }
 
     if (
-        audioContext.state ===
-        "suspended"
+        audioContext.state === "suspended"
     ) {
 
         await audioContext.resume();
     }
+}
+
+
+async function playFrequency(
+    frequency,
+    duration
+) {
+
+    await createAudioContext();
 
     oscillator =
         audioContext.createOscillator();
@@ -202,6 +231,9 @@ async function playFrequency(
         oscillator.disconnect();
         gainNode.disconnect();
     } catch {}
+
+    oscillator = null;
+    gainNode = null;
 }
 
 
@@ -217,9 +249,7 @@ async function sendText() {
 
     if (!text) {
 
-        alert(
-            "Enter some text first."
-        );
+        alert("Enter some text first.");
 
         return;
     }
@@ -245,6 +275,17 @@ async function sendText() {
             ).value
         );
 
+    if (
+        freq0 <= 0 ||
+        freq1 <= 0 ||
+        duration <= 0
+    ) {
+
+        alert("Enter valid settings.");
+
+        return;
+    }
+
     const binary =
         textToBinary(text);
 
@@ -252,18 +293,18 @@ async function sendText() {
         "binaryOutput"
     ).value = binary;
 
+    const preamble =
+        "1010101010101010";
+
+    const transmission =
+        preamble + binary;
+
     sending = true;
 
     document.getElementById(
         "sendStatus"
     ).textContent =
         "Sending...";
-
-    const preamble =
-        "1010101010101010";
-
-    const transmission =
-        preamble + binary;
 
     for (
         const bit of transmission
@@ -303,6 +344,15 @@ function stopSending() {
         } catch {}
 
         oscillator = null;
+    }
+
+    if (gainNode) {
+
+        try {
+            gainNode.disconnect();
+        } catch {}
+
+        gainNode = null;
     }
 
     document.getElementById(
@@ -348,13 +398,11 @@ async function startReceiving() {
 
         analyser.fftSize = 8192;
 
-        analyser.smoothingTimeConstant =
-            0.1;
+        analyser.smoothingTimeConstant = 0;
 
         microphone.connect(analyser);
 
         receivedBits = "";
-        lastBitTime = 0;
 
         document.getElementById(
             "receivedBinary"
@@ -365,11 +413,24 @@ async function startReceiving() {
         ).value = "";
 
         document.getElementById(
+            "detectedFreq"
+        ).textContent = "---";
+
+        document.getElementById(
             "receiveStatus"
         ).textContent =
             "Listening...";
 
-        detectFrequency();
+        receiving = true;
+
+        receiveStartTime =
+            performance.now();
+
+        receiveTimer =
+            setTimeout(
+                receiveBit,
+                100
+            );
 
     } catch (error) {
 
@@ -382,9 +443,9 @@ async function startReceiving() {
 }
 
 
-function getFrequencyStrength(
+function getStrength(
     data,
-    targetFrequency
+    frequency
 ) {
 
     const sampleRate =
@@ -393,18 +454,18 @@ function getFrequencyStrength(
     const fftSize =
         analyser.fftSize;
 
-    const center =
-        Math.round(
-            targetFrequency *
-            fftSize /
-            sampleRate
-        );
-
     const tolerance =
         Number(
             document.getElementById(
                 "receiveTolerance"
             ).value
+        );
+
+    const center =
+        Math.round(
+            frequency *
+            fftSize /
+            sampleRate
         );
 
     const binWidth =
@@ -430,11 +491,16 @@ function getFrequencyStrength(
 
         if (
             i >= 0 &&
-            i < data.length &&
-            data[i] > strongest
+            i < data.length
         ) {
 
-            strongest = data[i];
+            if (
+                data[i] > strongest
+            ) {
+
+                strongest =
+                    data[i];
+            }
         }
     }
 
@@ -442,10 +508,15 @@ function getFrequencyStrength(
 }
 
 
-function detectFrequency() {
+function receiveBit() {
 
-    if (!analyser)
+    if (
+        !receiving ||
+        !analyser
+    ) {
+
         return;
+    }
 
     const freq0 =
         Number(
@@ -461,6 +532,13 @@ function detectFrequency() {
             ).value
         );
 
+    const duration =
+        Number(
+            document.getElementById(
+                "receiveBitDuration"
+            ).value
+        );
+
     const data =
         new Float32Array(
             analyser.frequencyBinCount
@@ -471,121 +549,119 @@ function detectFrequency() {
     );
 
     const strength0 =
-        getFrequencyStrength(
+        getStrength(
             data,
             freq0
         );
 
     const strength1 =
-        getFrequencyStrength(
+        getStrength(
             data,
             freq1
         );
 
-    const threshold = -60;
+    const threshold = -65;
 
-    let detected = "---";
+    let bit = null;
 
     if (
         strength0 > threshold &&
         strength0 > strength1
     ) {
 
-        detected =
-            Math.round(freq0);
+        bit = "0";
 
-        detectedBit("0");
+        document.getElementById(
+            "detectedFreq"
+        ).textContent =
+            Math.round(freq0);
 
     } else if (
         strength1 > threshold &&
         strength1 > strength0
     ) {
 
-        detected =
+        bit = "1";
+
+        document.getElementById(
+            "detectedFreq"
+        ).textContent =
             Math.round(freq1);
 
-        detectedBit("1");
+    } else {
+
+        document.getElementById(
+            "detectedFreq"
+        ).textContent =
+            "---";
     }
 
-    document.getElementById(
-        "detectedFreq"
-    ).textContent =
-        detected;
+    if (bit !== null) {
 
-    receiveAnimation =
-        requestAnimationFrame(
-            detectFrequency
+        receivedBits += bit;
+
+        document.getElementById(
+            "receivedBinary"
+        ).value =
+            receivedBits;
+
+        decodeReceivedData();
+    }
+
+    receiveTimer =
+        setTimeout(
+            receiveBit,
+            duration
         );
 }
 
 
-function detectedBit(bit) {
-
-    const now =
-        performance.now();
-
-    const duration =
-        Number(
-            document.getElementById(
-                "receiveBitDuration"
-            ).value
-        );
+function decodeReceivedData() {
 
     if (
-        now - lastBitTime <
-        duration * 0.75
+        receivedBits.length < 16
     ) {
 
         return;
     }
 
-    lastBitTime = now;
-
-    receivedBits += bit;
-
-    document.getElementById(
-        "receivedBinary"
-    ).value =
-        receivedBits;
+    const preamble =
+        receivedBits.substring(
+            0,
+            16
+        );
 
     if (
-        receivedBits.length >= 16
+        preamble !==
+        "1010101010101010"
     ) {
 
-        const preamble =
-            receivedBits.substring(
-                0,
-                16
-            );
-
-        if (
-            preamble ===
-            "1010101010101010"
-        ) {
-
-            const data =
-                receivedBits.substring(
-                    16
-                );
-
-            document.getElementById(
-                "receivedText"
-            ).value =
-                binaryToText(data);
-        }
+        return;
     }
+
+    const data =
+        receivedBits.substring(
+            16
+        );
+
+    document.getElementById(
+        "receivedText"
+    ).value =
+        binaryToText(data);
 }
 
 
 function stopReceiving() {
 
-    if (receiveAnimation) {
+    receiving = false;
 
-        cancelAnimationFrame(
-            receiveAnimation
+    if (receiveTimer) {
+
+        clearTimeout(
+            receiveTimer
         );
 
-        receiveAnimation = null;
+        receiveTimer = null;
     }
 
     if (microphone) {
@@ -629,6 +705,37 @@ function stopReceiving() {
         "detectedFreq"
     ).textContent =
         "---";
+}
+
+
+async function sendAndListen() {
+
+    const text =
+        document.getElementById(
+            "textToSend"
+        ).value;
+
+    if (!text) {
+
+        alert("Enter text first.");
+
+        return;
+    }
+
+    await startReceiving();
+
+    await new Promise(resolve =>
+        setTimeout(resolve, 500)
+    );
+
+    await sendText();
+}
+
+
+function stopEverything() {
+
+    stopSending();
+    stopReceiving();
 }
 
 </script>
